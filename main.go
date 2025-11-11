@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"encoding/hex"
 	"fmt"
 	"net"
 	"ws2server/serverhandler"
@@ -20,7 +19,6 @@ func handleConnection(conn net.Conn) {
 			break
 		}
 		fmt.Println("Bytes Readed:", bytesReaded)
-		fmt.Printf("Received message: %s", hex.EncodeToString(clientData))
 		serverhandler.HandleClientData(conn, clientData, conn.RemoteAddr().String())
 	}
 }

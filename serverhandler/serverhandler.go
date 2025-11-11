@@ -2,6 +2,7 @@ package serverhandler
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"sync"
@@ -11,6 +12,8 @@ type ActionCode uint32
 
 const (
 	ListRooms      ActionCode = 200
+	ListUsers      ActionCode = 400
+	ListGames      ActionCode = 500
 	LoginQuery     ActionCode = 600
 	CreateRoom     ActionCode = 700
 	JoinRoomOrGame ActionCode = 800
@@ -50,11 +53,19 @@ type RoomInfo struct {
 	name        string
 	sessionInfo SessionInfo
 	userIds     []uint32
+	gamesIds    []uint32
 }
 
 type UserInfo struct {
 	name        string
-	id          uint32
+	ipAddress   string
+	sessionInfo SessionInfo
+	//conn net.Conn //We will need this for Notice type of messages
+}
+
+type GameInfo struct {
+	name        string
+	hostIp      []byte
 	sessionInfo SessionInfo
 }
 
@@ -62,8 +73,9 @@ var idCounter uint32 = 0x1000
 
 var mu sync.Mutex
 
-var connectedUsers = make(map[string]UserInfo)
+var connectedUsers = make(map[uint32]UserInfo)
 var rooms = make(map[uint32]RoomInfo)
+var games = make(map[uint32]GameInfo)
 
 func littleToBigEndianDecode(packetData []byte, start uint32) uint32 {
 	return (uint32(packetData[start+3]) << 24) + (uint32(packetData[start+2]) << 16) + (uint32(packetData[start+1]) << 8) + uint32(packetData[start])
@@ -76,9 +88,11 @@ func bigEndianToLittleEndianEncode(value uint32) []byte {
 }
 
 func BytesToPacket(packetData []byte) *Packet {
+	fmt.Println("Received message: ", hex.EncodeToString(packetData))
 	packet := Packet{}
 	packet.code = littleToBigEndianDecode(packetData, 0)
 	flags := littleToBigEndianDecode(packetData, 4)
+	fmt.Println("Action Code: ", packet.code)
 	fmt.Println("Flags = ", flags)
 	var offset uint32 = 8
 	isFlag10Set := flags&(1<<10) == (1 << 10)
@@ -185,6 +199,10 @@ func BytesToPacket(packetData []byte) *Packet {
 				}
 			case 10:
 				{
+					if isFlag10Set {
+						value10offset = offset
+						isFlag10Set = false
+					}
 					packet.value10 = littleToBigEndianDecode(packetData, value10offset)
 					fmt.Println("value 10 = ", packet.value10)
 				}
@@ -267,14 +285,14 @@ func (p *Packet) ToBytes() []byte {
 
 func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 	packet := BytesToPacket(clientData)
-	fmt.Println("Action Code: ", packet.code)
+	fmt.Println("----------------------------------------------------------------------------")
 	switch packet.code {
 	case uint32(LoginQuery):
 		{
 			mu.Lock()
-			connectedUsers[ipAddress] = UserInfo{
+			connectedUsers[idCounter] = UserInfo{
 				name:        string(packet.name),
-				id:          idCounter,
+				ipAddress:   ipAddress,
 				sessionInfo: packet.sessionInfo,
 			}
 			packetToSent := Packet{
@@ -334,10 +352,52 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 			}
 			conn.Write(packetToSent.ToBytes())
 		}
+	case uint32(ListGames):
+		{
+			for id := range rooms[packet.value2].gamesIds {
+				game := games[uint32(id)]
+				packetToSent := Packet{
+					code:        350,
+					flags:       [11]bool{false, true, false, false, false, true, true, true, true, true, false},
+					value1:      uint32(id),
+					dataLen:     uint32(len(game.hostIp)),
+					data:        game.hostIp,
+					name:        []byte(game.name),
+					sessionInfo: game.sessionInfo,
+				}
+				conn.Write(packetToSent.ToBytes())
+			}
+			packetToSent := Packet{
+				code:  351,
+				flags: [11]bool{false},
+			}
+			conn.Write(packetToSent.ToBytes())
+		}
+	case uint32(ListUsers):
+		{
+			for id := range rooms[packet.value2].gamesIds {
+				user := connectedUsers[uint32(id)]
+				packetToSent := Packet{
+					code:        350,
+					flags:       [11]bool{false, true, false, false, false, true, true, true, true, true, false},
+					value1:      uint32(id),
+					dataLen:     uint32(len(user.ipAddress)),
+					data:        []byte(user.ipAddress),
+					name:        []byte(user.name),
+					sessionInfo: user.sessionInfo,
+				}
+				conn.Write(packetToSent.ToBytes())
+			}
+			packetToSent := Packet{
+				code:  351,
+				flags: [11]bool{false},
+			}
+			conn.Write(packetToSent.ToBytes())
+		}
 	}
 }
 
 func HandleDisconnection(ipAddress string) {
 	fmt.Println("ipAddress Disconnected: ", ipAddress)
-	delete(connectedUsers, ipAddress)
+	//delete(connectedUsers, ipAddress)
 }
