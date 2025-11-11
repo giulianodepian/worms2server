@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"sync"
 )
 
 type ActionCode uint32
@@ -55,6 +56,8 @@ type UserInfo struct {
 }
 
 var idCounter uint32 = 0x1000
+
+var mu sync.Mutex
 
 var connectedUsers = make(map[string]UserInfo)
 var rooms = make(map[uint32]RoomInfo)
@@ -265,7 +268,7 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 	switch packet.code {
 	case uint32(LoginQuery):
 		{
-
+			mu.Lock()
 			connectedUsers[ipAddress] = UserInfo{
 				name:        string(packet.name),
 				id:          idCounter,
@@ -277,6 +280,7 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 				value1: idCounter,
 			}
 			idCounter++
+			mu.Unlock()
 			conn.Write(packetToSent.ToBytes())
 		}
 	case uint32(ListRooms):
