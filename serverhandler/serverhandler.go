@@ -6,6 +6,13 @@ import (
 	"net"
 )
 
+type ActionCode uint32
+
+const (
+	LoginQuery ActionCode = 600
+	ListRooms  ActionCode = 200
+)
+
 type SessionInfo struct {
 	magicNumber1 uint32
 	magicNumber2 uint32
@@ -35,9 +42,16 @@ type Packet struct {
 	sessionInfo SessionInfo
 }
 
+type RoomInfo struct {
+	creatorIp   []byte
+	name        string
+	sessionInfo SessionInfo
+}
+
 var idCounter uint32 = 0x1000
 
 var connectedUsers = make(map[uint32]SessionInfo)
+var rooms = make(map[uint32]RoomInfo)
 
 func littleToBigEndianDecode(packetData []byte, start uint32) uint32 {
 	return (uint32(packetData[start+3]) << 24) + (uint32(packetData[start+2]) << 16) + (uint32(packetData[start+1]) << 8) + uint32(packetData[start])
@@ -243,7 +257,7 @@ func HandleClientData(conn net.Conn, clientData []byte) {
 	packet := BytesToPacket(clientData)
 	fmt.Println("Action Code: ", packet.code)
 	switch packet.code {
-	case 600:
+	case uint32(LoginQuery):
 		{
 			connectedUsers[idCounter] = packet.sessionInfo
 			packetToSent := Packet{
@@ -254,5 +268,26 @@ func HandleClientData(conn net.Conn, clientData []byte) {
 			idCounter++
 			conn.Write(packetToSent.ToBytes())
 		}
+	case uint32(ListRooms):
+		{
+			for id, info := range rooms {
+				packetToSent := Packet{
+					code:        350,
+					flags:       [11]bool{false, true, false, false, false, true, true, true, true, true, false},
+					value1:      id,
+					dataLen:     (uint32)(len(info.creatorIp)),
+					data:        info.creatorIp,
+					name:        []byte(info.name),
+					sessionInfo: info.sessionInfo,
+				}
+				conn.Write(packetToSent.ToBytes())
+			}
+			packetToSent := Packet{
+				code:  351,
+				flags: [11]bool{false},
+			}
+			conn.Write(packetToSent.ToBytes())
+		}
+
 	}
 }
