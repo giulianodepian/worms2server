@@ -1,0 +1,258 @@
+package serverhandler
+
+import (
+	"encoding/binary"
+	"fmt"
+	"net"
+)
+
+type SessionInfo struct {
+	magicNumber1 uint32
+	magicNumber2 uint32
+	flag         uint8
+	gameVer      uint8
+	gameRelease  uint8
+	sessionType  uint8
+	access       uint8
+	magicNumber3 uint8
+	magicNumber4 uint8
+	padding      []byte
+}
+
+type Packet struct {
+	code        uint32
+	flags       [11]bool
+	value0      uint32
+	value1      uint32
+	value2      uint32
+	value3      uint32
+	value4      uint32
+	value10     uint32
+	dataLen     uint32
+	data        []byte
+	error       uint32
+	name        []byte
+	sessionInfo SessionInfo
+}
+
+var idCounter uint32 = 0x1000
+
+var connectedUsers = make(map[uint32]SessionInfo)
+
+func littleToBigEndianDecode(packetData []byte, start uint32) uint32 {
+	return (uint32(packetData[start+3]) << 24) + (uint32(packetData[start+2]) << 16) + (uint32(packetData[start+1]) << 8) + uint32(packetData[start])
+}
+
+func bigEndianToLittleEndianEncode(value uint32) []byte {
+	encodedValue := make([]byte, 4)
+	binary.LittleEndian.PutUint32(encodedValue, value)
+	return encodedValue
+}
+
+func BytesToPacket(packetData []byte) *Packet {
+	packet := Packet{}
+	packet.code = littleToBigEndianDecode(packetData, 0)
+	flags := littleToBigEndianDecode(packetData, 4)
+	fmt.Println("Flags = ", flags)
+	var offset uint32 = 8
+	isFlag10Set := flags&(1<<10) == (1 << 10)
+	var value10offset uint32 = 0
+	for i := range 11 {
+		packet.flags[i] = flags&(1<<i) == (1 << i)
+		if packet.flags[i] {
+			switch i {
+			case 0:
+				{
+					packet.value0 = littleToBigEndianDecode(packetData, offset)
+					fmt.Println("Value 0 = ", packet.value0)
+					offset += 4
+				}
+			case 1:
+				{
+					packet.value1 = littleToBigEndianDecode(packetData, offset)
+					fmt.Println("Value 1 = ", packet.value1)
+					offset += 4
+				}
+			case 2:
+				{
+					packet.value2 = littleToBigEndianDecode(packetData, offset)
+					fmt.Println("Value 2 = ", packet.value2)
+					offset += 4
+				}
+			case 3:
+				{
+					packet.value3 = littleToBigEndianDecode(packetData, offset)
+					fmt.Println("Value 3 = ", packet.value3)
+					offset += 4
+				}
+			case 4:
+				{
+					packet.value4 = littleToBigEndianDecode(packetData, offset)
+					fmt.Println("Value 4 = ", packet.value4)
+					offset += 4
+				}
+			case 5:
+				{
+					if isFlag10Set {
+						value10offset = offset
+						offset += 4
+						isFlag10Set = false
+					}
+					packet.dataLen = littleToBigEndianDecode(packetData, offset)
+					fmt.Println("Datalen = ", packet.dataLen)
+					offset += 4
+				}
+			case 6:
+				{
+					if isFlag10Set {
+						value10offset = offset
+						offset += 4
+						isFlag10Set = false
+					}
+					packet.data = packetData[offset : offset+packet.dataLen]
+					fmt.Println("Data = ", packet.data)
+					offset += packet.dataLen
+				}
+			case 7:
+				{
+					if isFlag10Set {
+						value10offset = offset
+						offset += 4
+						isFlag10Set = false
+					}
+					packet.error = littleToBigEndianDecode(packetData, offset)
+					fmt.Println("error = ", packet.error)
+					offset += 4
+				}
+			case 8:
+				{
+					if isFlag10Set {
+						value10offset = offset
+						offset += 4
+						isFlag10Set = false
+					}
+					packet.name = packetData[offset : offset+20]
+					fmt.Println("name = ", packet.name)
+					offset += 20
+				}
+			case 9:
+				{
+					if isFlag10Set {
+						value10offset = offset
+						offset += 4
+						isFlag10Set = false
+					}
+					packet.sessionInfo = SessionInfo{
+						magicNumber1: littleToBigEndianDecode(packetData, offset),
+						magicNumber2: littleToBigEndianDecode(packetData, offset+4),
+						flag:         packetData[offset+8],
+						gameVer:      packetData[offset+9],
+						gameRelease:  packetData[offset+10],
+						sessionType:  packetData[offset+11],
+						access:       packetData[offset+12],
+						magicNumber3: packetData[offset+13],
+						magicNumber4: packetData[offset+14],
+						padding:      packetData[offset+15 : offset+15+35],
+					}
+					fmt.Println("Session Data")
+					offset += 50
+				}
+			case 10:
+				{
+					packet.value10 = littleToBigEndianDecode(packetData, value10offset)
+					fmt.Println("value 10 = ", packet.value10)
+				}
+			}
+		}
+	}
+	return &packet
+}
+
+func (p *Packet) ToBytes() []byte {
+	var bytesToSend []byte
+	bytesToSend = append(bytesToSend, bigEndianToLittleEndianEncode(p.code)...)
+	var intFlag uint32 = 0
+	for i := range 11 {
+		if p.flags[i] {
+			intFlag += 1 << i
+		}
+	}
+	bytesToSend = append(bytesToSend, bigEndianToLittleEndianEncode(intFlag)...)
+	for i := range 10 {
+		if i == 5 && p.flags[10] {
+			bytesToSend = append(bytesToSend, bigEndianToLittleEndianEncode(p.value10)...)
+		}
+		if p.flags[i] {
+			switch i {
+			case 0:
+				{
+					bytesToSend = append(bytesToSend, bigEndianToLittleEndianEncode(p.value0)...)
+				}
+			case 1:
+				{
+					bytesToSend = append(bytesToSend, bigEndianToLittleEndianEncode(p.value1)...)
+				}
+			case 2:
+				{
+					bytesToSend = append(bytesToSend, bigEndianToLittleEndianEncode(p.value2)...)
+				}
+			case 3:
+				{
+					bytesToSend = append(bytesToSend, bigEndianToLittleEndianEncode(p.value3)...)
+				}
+			case 4:
+				{
+					bytesToSend = append(bytesToSend, bigEndianToLittleEndianEncode(p.value4)...)
+				}
+			case 5:
+				{
+					bytesToSend = append(bytesToSend, bigEndianToLittleEndianEncode(p.dataLen)...)
+				}
+			case 6:
+				{
+					bytesToSend = append(bytesToSend, p.data...)
+				}
+			case 7:
+				{
+					bytesToSend = append(bytesToSend, bigEndianToLittleEndianEncode(p.error)...)
+				}
+			case 8:
+				{
+					bytesToSend = append(bytesToSend, p.name...)
+				}
+			case 9:
+				{
+					bytesToSend = append(bytesToSend, bigEndianToLittleEndianEncode(p.sessionInfo.magicNumber1)...)
+					bytesToSend = append(bytesToSend, bigEndianToLittleEndianEncode(p.sessionInfo.magicNumber2)...)
+					bytesToSend = append(bytesToSend, p.sessionInfo.flag)
+					bytesToSend = append(bytesToSend, p.sessionInfo.gameVer)
+					bytesToSend = append(bytesToSend, p.sessionInfo.gameRelease)
+					bytesToSend = append(bytesToSend, p.sessionInfo.access)
+					bytesToSend = append(bytesToSend, p.sessionInfo.magicNumber3)
+					bytesToSend = append(bytesToSend, p.sessionInfo.magicNumber4)
+					bytesToSend = append(bytesToSend, p.sessionInfo.padding...)
+					fmt.Println("Session Data")
+				}
+			}
+		}
+	}
+	return bytesToSend
+}
+
+func HandleClientData(conn net.Conn, clientData []byte) {
+	packet := BytesToPacket(clientData)
+	fmt.Println("Action Code: ", packet.code)
+	switch packet.code {
+	case 600:
+		{
+			connectedUsers[idCounter] = packet.sessionInfo
+			packetToSent := Packet{
+				code:   601,
+				flags:  [11]bool{false, true, false, false, false, false, false, false, false, false, false},
+				value1: idCounter,
+			}
+			idCounter++
+			conn.Write(packetToSent.ToBytes())
+		}
+	}
+}
