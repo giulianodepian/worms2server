@@ -10,8 +10,10 @@ import (
 type ActionCode uint32
 
 const (
-	LoginQuery ActionCode = 600
-	ListRooms  ActionCode = 200
+	ListRooms      ActionCode = 200
+	LoginQuery     ActionCode = 600
+	CreateRoom     ActionCode = 700
+	JoinRoomOrGame ActionCode = 800
 )
 
 type SessionInfo struct {
@@ -47,6 +49,7 @@ type RoomInfo struct {
 	creatorIp   []byte
 	name        string
 	sessionInfo SessionInfo
+	userIds     []uint32
 }
 
 type UserInfo struct {
@@ -303,7 +306,34 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 			}
 			conn.Write(packetToSent.ToBytes())
 		}
-
+	case uint32(CreateRoom):
+		{
+			mu.Lock()
+			rooms[idCounter] = RoomInfo{
+				creatorIp:   packet.data,
+				name:        string(packet.name),
+				sessionInfo: packet.sessionInfo,
+			}
+			packetToSent := Packet{
+				code:   701,
+				flags:  [11]bool{false, true, false, false, false, false, false, false, false, false},
+				value1: idCounter,
+			}
+			idCounter++
+			mu.Unlock()
+			conn.Write(packetToSent.ToBytes())
+		}
+	case uint32(JoinRoomOrGame):
+		{
+			room := rooms[packet.value2]
+			room.userIds = append(room.userIds, packet.value10)
+			rooms[packet.value2] = room
+			packetToSent := Packet{
+				code:  801,
+				flags: [11]bool{false},
+			}
+			conn.Write(packetToSent.ToBytes())
+		}
 	}
 }
 
