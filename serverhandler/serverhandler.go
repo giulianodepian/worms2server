@@ -48,9 +48,14 @@ type RoomInfo struct {
 	sessionInfo SessionInfo
 }
 
+type UserInfo struct {
+	name        string
+	sessionInfo SessionInfo
+}
+
 var idCounter uint32 = 0x1000
 
-var connectedUsers = make(map[uint32]SessionInfo)
+var connectedUsers = make(map[uint32]UserInfo)
 var rooms = make(map[uint32]RoomInfo)
 
 func littleToBigEndianDecode(packetData []byte, start uint32) uint32 {
@@ -259,7 +264,11 @@ func HandleClientData(conn net.Conn, clientData []byte) {
 	switch packet.code {
 	case uint32(LoginQuery):
 		{
-			connectedUsers[idCounter] = packet.sessionInfo
+
+			connectedUsers[idCounter] = UserInfo{
+				string(packet.name),
+				packet.sessionInfo,
+			}
 			packetToSent := Packet{
 				code:   601,
 				flags:  [11]bool{false, true, false, false, false, false, false, false, false, false, false},
