@@ -16,11 +16,12 @@ func handleConnection(conn net.Conn) {
 		bytesReaded, err := reader.Read(clientData)
 		if err != nil {
 			fmt.Println("Error reading data:", err)
+			serverhandler.HandleDisconnection(conn.RemoteAddr().String())
 			break
 		}
 		fmt.Println("Bytes Readed:", bytesReaded)
 		fmt.Printf("Received message: %s", hex.EncodeToString(clientData))
-		serverhandler.HandleClientData(conn, clientData)
+		serverhandler.HandleClientData(conn, clientData, conn.RemoteAddr().String())
 	}
 }
 
