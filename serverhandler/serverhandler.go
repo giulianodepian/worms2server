@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 )
 
 type ActionCode uint32
@@ -345,6 +346,7 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 		{
 			room := rooms[packet.value2]
 			room.userIds = append(room.userIds, packet.value10)
+			fmt.Print("userdIds: ", room.userIds)
 			rooms[packet.value2] = room
 			packetToSent := Packet{
 				code:  801,
@@ -354,8 +356,8 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 		}
 	case uint32(ListGames):
 		{
-			for id := range rooms[packet.value2].gamesIds {
-				game := games[uint32(id)]
+			for _, id := range rooms[packet.value2].gamesIds {
+				game := games[id]
 				packetToSent := Packet{
 					code:        350,
 					flags:       [11]bool{false, true, false, false, false, true, true, true, true, true, false},
@@ -369,14 +371,16 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 			}
 			packetToSent := Packet{
 				code:  351,
-				flags: [11]bool{false},
+				flags: [11]bool{false, false, false, false, false, false, false, true, false, false, false},
+				error: 0,
 			}
 			conn.Write(packetToSent.ToBytes())
 		}
 	case uint32(ListUsers):
 		{
-			for id := range rooms[packet.value2].gamesIds {
-				user := connectedUsers[uint32(id)]
+			for _, id := range rooms[packet.value2].userIds {
+				user := connectedUsers[id]
+				fmt.Println("User: ", user)
 				packetToSent := Packet{
 					code:        350,
 					flags:       [11]bool{false, true, false, false, false, true, true, true, true, true, false},
@@ -390,9 +394,12 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 			}
 			packetToSent := Packet{
 				code:  351,
-				flags: [11]bool{false},
+				flags: [11]bool{false, false, false, false, false, false, false, true, false, false, false},
+				error: 0,
 			}
+			time.Sleep(2 * time.Second)
 			conn.Write(packetToSent.ToBytes())
+			fmt.Println("Test")
 		}
 	}
 }
