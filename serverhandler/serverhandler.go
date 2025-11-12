@@ -11,12 +11,14 @@ import (
 type ActionCode uint32
 
 const (
-	ListRooms      ActionCode = 200
-	ListUsers      ActionCode = 400
-	ListGames      ActionCode = 500
-	LoginQuery     ActionCode = 600
-	CreateRoom     ActionCode = 700
-	JoinRoomOrGame ActionCode = 800
+	ListRooms       ActionCode = 200
+	ListUsers       ActionCode = 400
+	ListGames       ActionCode = 500
+	LoginQuery      ActionCode = 600
+	CreateRoom      ActionCode = 700
+	JoinRoomOrGame  ActionCode = 800
+	LeaveRoomOrGame ActionCode = 900
+	CloseRoomOrGame ActionCode = 1100
 )
 
 type SessionInfo struct {
@@ -401,10 +403,40 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 			}
 			conn.Write(packetToSent.ToBytes())
 		}
+	case uint32(LeaveRoomOrGame):
+		{
+			var userToRemove = -1
+			for index, id := range rooms[packet.value2].userIds {
+				if id == packet.value10 {
+					userToRemove = index
+				}
+			}
+			if userToRemove != -1 {
+				room := rooms[packet.value2]
+				room.userIds = append(room.userIds[:userToRemove], room.userIds[userToRemove+1:]...)
+				rooms[packet.value2] = room
+			}
+			packetToSent := Packet{
+				code:  901,
+				flags: [11]bool{false, false, false, false, false, false, false, true, false, false, false},
+				error: 0,
+			}
+			conn.Write(packetToSent.ToBytes())
+		}
+	case uint32(CloseRoomOrGame):
+		{
+			delete(rooms, packet.value10)
+			packetToSent := Packet{
+				code:  1101,
+				flags: [11]bool{false, false, false, false, false, false, false, true, false, false, false},
+				error: 0,
+			}
+			conn.Write(packetToSent.ToBytes())
+		}
 	}
 }
 
 func HandleDisconnection(ipAddress string) {
 	fmt.Println("ipAddress Disconnected: ", ipAddress)
-	//delete(connectedUsers, ipAddress)
+
 }
