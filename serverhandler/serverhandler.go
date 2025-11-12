@@ -194,7 +194,7 @@ func BytesToPacket(packetData []byte) *Packet {
 						magicNumber4: packetData[offset+14],
 						padding:      packetData[offset+15 : offset+15+35],
 					}
-					fmt.Println("Session Data")
+					fmt.Println("Session Data: ", packet.sessionInfo)
 					offset += 50
 				}
 			case 10:
@@ -271,11 +271,11 @@ func (p *Packet) ToBytes() []byte {
 					bytesToSend = append(bytesToSend, p.sessionInfo.flag)
 					bytesToSend = append(bytesToSend, p.sessionInfo.gameVer)
 					bytesToSend = append(bytesToSend, p.sessionInfo.gameRelease)
+					bytesToSend = append(bytesToSend, p.sessionInfo.sessionType)
 					bytesToSend = append(bytesToSend, p.sessionInfo.access)
 					bytesToSend = append(bytesToSend, p.sessionInfo.magicNumber3)
 					bytesToSend = append(bytesToSend, p.sessionInfo.magicNumber4)
 					bytesToSend = append(bytesToSend, p.sessionInfo.padding...)
-					fmt.Println("Session Data")
 				}
 			}
 		}
@@ -313,6 +313,7 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 					value1:      id,
 					dataLen:     (uint32)(len(info.creatorIp)),
 					data:        info.creatorIp,
+					error:       0,
 					name:        []byte(info.name),
 					sessionInfo: info.sessionInfo,
 				}
@@ -345,7 +346,6 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 		{
 			room := rooms[packet.value2]
 			room.userIds = append(room.userIds, packet.value10)
-			fmt.Print("userdIds: ", room.userIds)
 			rooms[packet.value2] = room
 			packetToSent := Packet{
 				code:  801,
@@ -363,6 +363,7 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 					value1:      uint32(id),
 					dataLen:     uint32(len(game.hostIp)),
 					data:        game.hostIp,
+					error:       0,
 					name:        []byte(game.name),
 					sessionInfo: game.sessionInfo,
 				}
@@ -377,19 +378,22 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 		}
 	case uint32(ListUsers):
 		{
+
 			for _, id := range rooms[packet.value2].userIds {
 				user := connectedUsers[id]
 				packetToSent := Packet{
 					code:        350,
 					flags:       [11]bool{false, true, false, false, false, true, true, true, true, true, false},
 					value1:      uint32(id),
-					dataLen:     uint32(len(user.ipAddress)),
-					data:        []byte(user.ipAddress),
+					dataLen:     uint32(len(user.ipAddress) + 1),
+					data:        append([]byte(user.ipAddress), 0),
+					error:       0,
 					name:        []byte(user.name),
 					sessionInfo: user.sessionInfo,
 				}
 				conn.Write(packetToSent.ToBytes())
 			}
+
 			packetToSent := Packet{
 				code:  351,
 				flags: [11]bool{false, false, false, false, false, false, false, true, false, false, false},
