@@ -379,7 +379,6 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 		{
 			for _, id := range rooms[packet.value2].userIds {
 				user := connectedUsers[id]
-				fmt.Println("User: ", user)
 				packetToSent := Packet{
 					code:        350,
 					flags:       [11]bool{false, true, false, false, false, true, true, true, true, true, false},
