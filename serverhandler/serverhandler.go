@@ -70,6 +70,7 @@ type GameInfo struct {
 	name        string
 	hostIp      []byte
 	sessionInfo SessionInfo
+	userIds     []uint32
 }
 
 var idCounter uint32 = 0x1000
@@ -347,9 +348,17 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 		}
 	case uint32(JoinRoomOrGame):
 		{
-			room := rooms[packet.value2]
-			room.userIds = append(room.userIds, packet.value10)
-			rooms[packet.value2] = room
+			room, exist := rooms[packet.value2]
+			if !exist {
+				//If not room, check if it is a game
+				game, exist := games[packet.value2]
+				if exist {
+					game.userIds = append(game.userIds, packet.value10)
+				}
+			} else {
+				room.userIds = append(room.userIds, packet.value10)
+				rooms[packet.value2] = room
+			}
 			packetToSent := Packet{
 				code:  801,
 				flags: [11]bool{false},
@@ -381,8 +390,16 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 		}
 	case uint32(ListUsers):
 		{
-
-			for _, id := range rooms[packet.value2].userIds {
+			var users []uint32
+			room, exist := rooms[packet.value2]
+			if exist {
+				users = room.userIds
+			} else if game, exist := games[packet.value2]; exist { //If not a room, check if it's a game
+				users = game.userIds
+			} else {
+				users = make([]uint32, 0)
+			}
+			for _, id := range users {
 				user := connectedUsers[id]
 				packetToSent := Packet{
 					code:        350,
@@ -407,15 +424,28 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 	case uint32(LeaveRoomOrGame):
 		{
 			var userToRemove = -1
-			for index, id := range rooms[packet.value2].userIds {
-				if id == packet.value10 {
-					userToRemove = index
+			if _, exist := rooms[packet.value2]; exist {
+				for index, id := range rooms[packet.value2].userIds {
+					if id == packet.value10 {
+						userToRemove = index
+					}
 				}
-			}
-			if userToRemove != -1 {
-				room := rooms[packet.value2]
-				room.userIds = append(room.userIds[:userToRemove], room.userIds[userToRemove+1:]...)
-				rooms[packet.value2] = room
+				if userToRemove != -1 {
+					room := rooms[packet.value2]
+					room.userIds = append(room.userIds[:userToRemove], room.userIds[userToRemove+1:]...)
+					rooms[packet.value2] = room
+				}
+			} else if _, exist := games[packet.value2]; exist {
+				for index, id := range games[packet.value2].userIds {
+					if id == packet.value10 {
+						userToRemove = index
+					}
+				}
+				if userToRemove != -1 {
+					game := games[packet.value2]
+					game.userIds = append(game.userIds[:userToRemove], game.userIds[userToRemove+1:]...)
+					games[packet.value2] = game
+				}
 			}
 			packetToSent := Packet{
 				code:  901,
@@ -426,7 +456,10 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 		}
 	case uint32(CloseRoomOrGame):
 		{
+			//Delete room or game, rooms and games don't share Ids, so it is safe to just call them
 			delete(rooms, packet.value10)
+			delete(games, packet.value10)
+
 			packetToSent := Packet{
 				code:  1101,
 				flags: [11]bool{false, false, false, false, false, false, false, true, false, false, false},
@@ -436,7 +469,6 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 		}
 	case uint32(CreateGame):
 		{
-			//To be fully functional, we have to combine rooms and games in the same list, since they are treated the same, and identify them with a type
 			mu.Lock()
 			games[idCounter] = GameInfo{
 				hostIp:      packet.data,
