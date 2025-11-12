@@ -489,4 +489,21 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 
 func HandleDisconnection(ipAddress string) {
 	fmt.Println("ipAddress Disconnected: ", ipAddress)
+	var uidToDelete uint32 = 0
+	var userFound bool = false
+	for key, value := range connectedUsers {
+		if value.ipAddress == ipAddress {
+			uidToDelete = key
+			userFound = true
+			break
+		}
+	}
+	if userFound {
+		cleanUser(uidToDelete)
+	}
+}
+
+func cleanUser(uid uint32) {
+	//Here should also remove it from games and rooms if he's in any of them
+	delete(connectedUsers, uid)
 }
