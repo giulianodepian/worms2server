@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"sync"
-	"time"
 )
 
 type ActionCode uint32
@@ -397,9 +396,7 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 				flags: [11]bool{false, false, false, false, false, false, false, true, false, false, false},
 				error: 0,
 			}
-			time.Sleep(2 * time.Second)
 			conn.Write(packetToSent.ToBytes())
-			fmt.Println("Test")
 		}
 	}
 }
