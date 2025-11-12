@@ -19,6 +19,7 @@ const (
 	JoinRoomOrGame  ActionCode = 800
 	LeaveRoomOrGame ActionCode = 900
 	CloseRoomOrGame ActionCode = 1100
+	CreateGame      ActionCode = 1200
 )
 
 type SessionInfo struct {
@@ -433,10 +434,27 @@ func HandleClientData(conn net.Conn, clientData []byte, ipAddress string) {
 			}
 			conn.Write(packetToSent.ToBytes())
 		}
+	case uint32(CreateGame):
+		{
+			//To be fully functional, we have to combine rooms and games in the same list, since they are treated the same, and identify them with a type
+			mu.Lock()
+			games[idCounter] = GameInfo{
+				hostIp:      packet.data,
+				name:        string(packet.name),
+				sessionInfo: packet.sessionInfo,
+			}
+			packetToSent := Packet{
+				code:   1201,
+				flags:  [11]bool{false, true, false, false, false, false, false, false, false, false},
+				value1: idCounter,
+			}
+			idCounter++
+			mu.Unlock()
+			conn.Write(packetToSent.ToBytes())
+		}
 	}
 }
 
 func HandleDisconnection(ipAddress string) {
 	fmt.Println("ipAddress Disconnected: ", ipAddress)
-
 }
